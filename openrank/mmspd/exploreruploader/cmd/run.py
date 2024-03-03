@@ -113,7 +113,6 @@ async def run(args):
                             try:
                                 epoch = parse_timestamp(manifest['epoch'])
                                 ts = parse_timestamp(manifest['issuanceDate'])
-                                ets = parse_timestamp(manifest['effectiveDate'])
                                 scope = manifest['scope']
                             except KeyError:
                                 logger.error("invalid manifest",
@@ -154,10 +153,6 @@ async def run(args):
                 max_epoch = max(timestamps_by_epoch_scope.keys())
             except ValueError:
                 continue
-            list_by_scope = {
-                scope: [str(ts) for ts in sorted(timestamps)]
-                for (scope, timestamps) in timestamps_by_epoch_scope[max_epoch].items()
-            }
             list_ = [str(ts)
                      for ts in sorted(reduce(lambda x, y: x | y,
                                              timestamps_by_epoch_scope[
