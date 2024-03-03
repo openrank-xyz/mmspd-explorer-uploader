@@ -140,10 +140,10 @@ async def run(args):
                                 for path2 in zipdir.iterdir():
                                     if path2.is_file():
                                         await s3_upload_queue.put((f'{path2}',
-                                                                   f'files/{scope}/{ts0}/{path2.relative_to(tmpdir)}'))
+                                                                   f'files/{scope}/{ts0}/{path2.relative_to(zipdir)}'))
                                         # for backward compatibility
                                         await s3_upload_queue.put((f'{path2}',
-                                                                   f'files/{ts0}/{path2.relative_to(tmpdir)}'))
+                                                                   f'files/{ts0}/{path2.relative_to(zipdir)}'))
                             manifest_by_scope_ts.setdefault(scope, {})[ts0] = \
                                 manifest
                             timestamps_by_epoch_scope \
