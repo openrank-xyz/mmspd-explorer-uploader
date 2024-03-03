@@ -7,7 +7,7 @@ name = "openrank-mmspd-explorer-uploader"
 version = "0.0.1"
 description = "Upload score files created by snap-score-computer for use by the graph explorer"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
