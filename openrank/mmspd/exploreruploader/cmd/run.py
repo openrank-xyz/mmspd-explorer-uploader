@@ -107,8 +107,8 @@ async def run(args):
                                 with path.open() as f:
                                     manifest = json.load(f)
                             except (OSError, json.JSONDecodeError):
-                                _logger.error("cannot load manifest",
-                                              exc=traceback.format_exc())
+                                logger.error("cannot load manifest",
+                                             exc=traceback.format_exc())
                                 continue
                             try:
                                 epoch = parse_timestamp(manifest['epoch'])
@@ -116,16 +116,16 @@ async def run(args):
                                 ets = parse_timestamp(manifest['effectiveDate'])
                                 scope = manifest['scope']
                             except KeyError:
-                                _logger.error("invalid manifest",
-                                              exc=traceback.format_exc())
+                                logger.error("invalid manifest",
+                                             exc=traceback.format_exc())
                                 continue
                             except ValueError:
-                                _logger.error(
+                                logger.error(
                                     "invalid epoch/issuance/effective date",
                                     exc=traceback.format_exc())
                                 continue
                             if not isinstance(scope, str):
-                                _logger.error("scope not a string")
+                                logger.error("scope not a string")
                                 continue
                             assert round(ts.timestamp() * 1000) == ts0
                             try:
