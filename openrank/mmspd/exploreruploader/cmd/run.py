@@ -160,10 +160,21 @@ async def run(args):
                 max_epoch = max(timestamps_by_epoch_scope.keys())
             except ValueError:
                 continue
-            list_ = [str(ts)
-                     for ts in sorted(reduce(lambda x, y: x | y,
-                                             timestamps_by_epoch_scope[
-                                                 max_epoch].values()))]
+            timestamps = [str(ts)
+                          for ts in sorted(reduce(lambda x, y: x | y,
+                                                  timestamps_by_epoch_scope[
+                                                      max_epoch].values()))]
+            timestamps_json = tmpdir / 'timestamps.json'
+            with timestamps_json.open('w') as f:
+                json.dump(timestamps, f)
+            await s3_upload_queue.put(
+                (f'{timestamps_json}', 'api/scores/timestamps.json'))
+            list_ = {}
+            for (scope, timestamps) in \
+                    timestamps_by_epoch_scope[max_epoch].items():
+                for ts in timestamps:
+                    manifest = manifest_by_scope_ts[scope][ts]
+                    list_[str(ts)] = manifest
             list_json = tmpdir / 'list.json'
             with list_json.open('w') as f:
                 json.dump(list_, f)
