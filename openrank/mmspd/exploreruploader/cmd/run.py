@@ -133,18 +133,25 @@ async def run(args):
                                 pass
                             else:
                                 continue
-                            with zipfile.ZipFile(path.with_suffix('.zip')) as z:
+                            with zipfile.ZipFile(
+                                    path.with_suffix('.zip')) as z:
                                 zipdir = tmpdir / scope / path.stem
                                 z.extractall(zipdir)
                                 for path2 in zipdir.iterdir():
                                     if path2.is_file():
-                                        await s3_upload_queue.put((f'{path2}',
-                                                                   f'files/{scope}/{ts0}/{path2.relative_to(zipdir)}'))
+                                        relpath = path2.relative_to(zipdir)
+                                        await s3_upload_queue.put((
+                                            f'{path2}',
+                                            f'files/{scope}/{ts0}/{relpath}',
+                                        ))
                                         # for backward compatibility
-                                        await s3_upload_queue.put((f'{path2}',
-                                                                   f'files/{ts0}/{path2.relative_to(zipdir)}'))
-                            manifest_by_scope_ts.setdefault(scope, {})[ts0] = \
-                                manifest
+                                        await s3_upload_queue.put((
+                                            f'{path2}',
+                                            f'files/{ts0}/{relpath}',
+                                        ))
+                            manifest_by_scope_ts \
+                                .setdefault(scope, {})[ts0] \
+                                = manifest
                             timestamps_by_epoch_scope \
                                 .setdefault(epoch, {}) \
                                 .setdefault(scope, set()) \
