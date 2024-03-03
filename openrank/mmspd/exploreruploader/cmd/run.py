@@ -8,6 +8,7 @@ import traceback
 import zipfile
 from argparse import ArgumentParser
 from datetime import datetime
+from functools import reduce
 
 import aioboto3
 import structlog
@@ -22,12 +23,13 @@ async def setup_parser(parser: ArgumentParser):
                         help="""AWS region name""")
     parser.add_argument('--s3-uploaders', metavar='NUM', type=int, default=10,
                         help="""number of parallel S3 uploader tasks""")
-    parser.add_argument('directory', metavar='DIRECTORY', type=pathlib.Path,
-                        help="""output directory to scan""")
     parser.add_argument('s3_bucket', metavar='BUCKET',
                         help="""AWS S3 bucket name""")
     parser.add_argument('indexer_cache', type=pathlib.Path,
                         help="""cache CSV file for /indexer-scores""")
+    parser.add_argument('directories', metavar='DIRECTORY', type=pathlib.Path,
+                        nargs='+',
+                        help="""output directory to scan""")
 
 
 def parse_timestamp(s: str) -> datetime:
@@ -59,7 +61,7 @@ async def upload_to_s3(args: argparse.Namespace, worker_index: int,
             match await queue.get():
                 case None:
                     await queue.put(None)
-                    logger.info("finished")
+                    # logger.debug("finished")
                     return
                 case (path, key):
                     # noinspection PyBroadException
@@ -79,9 +81,8 @@ async def upload_to_s3(args: argparse.Namespace, worker_index: int,
 
 async def run(args):
     # TODO(ek): Use some sort of filesystem monitor
-    manifest_by_ts = dict[datetime, dict]()
-    timestamps_by_epoch = dict[datetime, set[int]]()
-    directory: pathlib.Path = args.directory
+    manifest_by_scope_ts = dict[str, dict[int, dict]]()
+    timestamps_by_epoch_scope = dict[datetime, dict[str, set[int]]]()
     while True:
         _logger.info("starting a run")
         s3_upload_queue = asyncio.Queue(args.s3_uploaders * 4)
@@ -92,52 +93,75 @@ async def run(args):
         ]
         tmpdir = pathlib.Path(tempfile.mkdtemp())
         try:
-            for path in directory.iterdir():
-                logger = _logger.bind(path=path)
-                match path.suffix:
-                    case '.json':
-                        try:
-                            ts0 = int(path.stem)
-                        except ValueError:
-                            continue
-                        if ts0 in manifest_by_ts:
-                            continue
-                        try:
-                            with path.open() as f:
-                                manifest = json.load(f)
-                        except (OSError, json.JSONDecodeError):
-                            _logger.error("cannot load manifest",
-                                          exc=traceback.format_exc())
-                            continue
-                        try:
-                            epoch = parse_timestamp(manifest['epoch'])
-                            ts = parse_timestamp(manifest['issuanceDate'])
-                            ets = parse_timestamp(manifest['effectiveDate'])
-                        except KeyError:
-                            _logger.error("invalid manifest",
-                                          exc=traceback.format_exc())
-                            continue
-                        except ValueError:
-                            _logger.error(
-                                "invalid epoch/issuance/effective date",
-                                exc=traceback.format_exc())
-                            continue
-                        assert round(ts.timestamp() * 1000) == ts0
-                        with zipfile.ZipFile(path.with_suffix('.zip')) as z:
-                            zipdir = tmpdir / path.stem
-                            z.extractall(zipdir)
-                            for path2 in zipdir.iterdir():
-                                if path2.is_file():
-                                    await s3_upload_queue.put((f'{path2}',
-                                                               f'files/{ts0}/{path2.relative_to(tmpdir)}'))
-                        manifest_by_ts[ts0] = manifest
-                        timestamps_by_epoch.setdefault(epoch, set()).add(ts0)
+            for directory in args.directories:
+                directory: pathlib.Path
+                for path in directory.iterdir():
+                    logger = _logger.bind(path=path)
+                    match path.suffix:
+                        case '.json':
+                            try:
+                                ts0 = int(path.stem)
+                            except ValueError:
+                                continue
+                            try:
+                                with path.open() as f:
+                                    manifest = json.load(f)
+                            except (OSError, json.JSONDecodeError):
+                                _logger.error("cannot load manifest",
+                                              exc=traceback.format_exc())
+                                continue
+                            try:
+                                epoch = parse_timestamp(manifest['epoch'])
+                                ts = parse_timestamp(manifest['issuanceDate'])
+                                ets = parse_timestamp(manifest['effectiveDate'])
+                                scope = manifest['scope']
+                            except KeyError:
+                                _logger.error("invalid manifest",
+                                              exc=traceback.format_exc())
+                                continue
+                            except ValueError:
+                                _logger.error(
+                                    "invalid epoch/issuance/effective date",
+                                    exc=traceback.format_exc())
+                                continue
+                            if not isinstance(scope, str):
+                                _logger.error("scope not a string")
+                                continue
+                            assert round(ts.timestamp() * 1000) == ts0
+                            try:
+                                manifest_by_scope_ts[scope][ts0]
+                            except KeyError:
+                                pass
+                            else:
+                                continue
+                            with zipfile.ZipFile(path.with_suffix('.zip')) as z:
+                                zipdir = tmpdir / scope / path.stem
+                                z.extractall(zipdir)
+                                for path2 in zipdir.iterdir():
+                                    if path2.is_file():
+                                        await s3_upload_queue.put((f'{path2}',
+                                                                   f'files/{scope}/{ts0}/{path2.relative_to(tmpdir)}'))
+                                        # for backward compatibility
+                                        await s3_upload_queue.put((f'{path2}',
+                                                                   f'files/{ts0}/{path2.relative_to(tmpdir)}'))
+                            manifest_by_scope_ts.setdefault(scope, {})[ts0] = \
+                                manifest
+                            timestamps_by_epoch_scope \
+                                .setdefault(epoch, {}) \
+                                .setdefault(scope, set()) \
+                                .add(ts0)
             try:
-                max_epoch = max(timestamps_by_epoch.keys())
+                max_epoch = max(timestamps_by_epoch_scope.keys())
             except ValueError:
                 continue
-            timestamps = timestamps_by_epoch[max_epoch]
-            list_ = [str(ts) for ts in sorted(timestamps)]
+            list_by_scope = {
+                scope: [str(ts) for ts in sorted(timestamps)]
+                for (scope, timestamps) in timestamps_by_epoch_scope[max_epoch].items()
+            }
+            list_ = [str(ts)
+                     for ts in sorted(reduce(lambda x, y: x | y,
+                                             timestamps_by_epoch_scope[
+                                                 max_epoch].values()))]
             list_json = tmpdir / 'list.json'
             with list_json.open('w') as f:
                 json.dump(list_, f)
