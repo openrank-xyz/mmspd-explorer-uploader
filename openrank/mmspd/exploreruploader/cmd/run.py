@@ -115,8 +115,8 @@ async def run(args):
                                 ts = parse_timestamp(manifest['issuanceDate'])
                                 scope = manifest['scope']
                             except KeyError:
-                                logger.error("invalid manifest",
-                                             exc=traceback.format_exc())
+                                # logger.error("invalid manifest",
+                                #              exc=traceback.format_exc())
                                 continue
                             except ValueError:
                                 logger.error(
