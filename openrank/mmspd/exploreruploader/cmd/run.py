@@ -17,7 +17,7 @@ _logger: structlog.BoundLoggerBase = structlog.get_logger(__name__)
 
 
 async def setup_parser(parser: ArgumentParser):
-    parser.add_argument('--aws-profile', default='default',
+    parser.add_argument('--aws-profile',
                         help="""AWS CLI profile name""")
     parser.add_argument('--aws-region',
                         help="""AWS region name""")
